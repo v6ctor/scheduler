@@ -9,7 +9,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 type termData struct {
@@ -24,6 +27,8 @@ type course struct {
 	Subject         string            `json:"subject"`
 	Type            string            `json:"scheduleTypeDescription"`
 	Title           string            `json:"courseTitle"`
+	DescriptionUrl  string            `json:""`
+	Description     string            `json:""`
 	Credits         float32           `json:"creditHours"`
 	MaxEnrollment   int               `json:"maximumEnrollment"`
 	Enrolled        int               `json:"enrollment"`
@@ -95,14 +100,14 @@ func setTerm(semester string, year string) string {
 	return term.String()
 }
 
-func requestCourses(offset string, max string, client http.Client) (*termData, error) {
+func requestCourses(term string, offset string, max string, client http.Client) (*termData, error) {
 	// Note: Endpoint is limited to 500 courses per request, we'll use some sort of pagination
 	// Will probably not exceed 1000 courses so, for now, 2 requests will be enough
 
 	var swarthmoreUrl strings.Builder
 
 	swarthmoreUrl.WriteString("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/searchResults/searchResults?txt_term=")
-	swarthmoreUrl.WriteString(setTerm("fall", "2024"))
+	swarthmoreUrl.WriteString(term)
 	swarthmoreUrl.WriteString("&startDatepicker=&endDatepicker=&uniqueSessionId=cwtoq1717225731537&pageOffset=")
 	swarthmoreUrl.WriteString(offset)
 	swarthmoreUrl.WriteString("&pageMaxSize=")
@@ -132,7 +137,66 @@ func requestCourses(offset string, max string, client http.Client) (*termData, e
 	return data, nil
 }
 
+func getCourseDescriptionUrls(term string, data termData) {
+	for i := range data.Courses {
+		var formattedUrl strings.Builder
+
+		formattedUrl.WriteString("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/searchResults/getCourseDescription?term=")
+		formattedUrl.WriteString(term)
+		formattedUrl.WriteString("&courseReferenceNumber=")
+		formattedUrl.WriteString(data.Courses[i].Ref)
+
+		url := formattedUrl.String()
+
+		data.Courses[i].DescriptionUrl = url
+	}
+}
+
+func requestCourseDescription(index int, data termData, client http.Client, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	resp, err := client.Get(data.Courses[index].DescriptionUrl)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	section := doc.Find(`section[aria-labelledby="courseDescription"]`)
+	_, formattedString, ok := strings.Cut(section.Text(), "Section information text:")
+
+	if !ok {
+		data.Courses[index].Description = "No course description provided. Contact Professor."
+	} else {
+		data.Courses[index].Description = strings.TrimSpace(formattedString)
+	}
+}
+
 func main() {
+	var semester, year string
+	var wg sync.WaitGroup
+
+	fmt.Print("Enter your semester (i.e. fall): ")
+	fmt.Scan(&semester)
+
+	fmt.Print("Enter your year (i.e. 2024): ")
+	fmt.Scan(&year)
+
+	term := setTerm(semester, year)
+
 	defer timer("main")()
 
 	jar, _ := cookiejar.New(nil)
@@ -142,11 +206,9 @@ func main() {
 	}
 
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/registration")
-	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/classSearch/getTerms?searchTerm=&offset=1&max=10&_=1717271345154")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/search?mode=search&term=202404&studyPath=&studyPathText=&startDatepicker=&endDatepicker=&uniqueSessionId=l47z91717271338036")
-	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/classSearch/classSearch")
 
 	fmt.Println("Hydrated client")
 
@@ -158,7 +220,7 @@ func main() {
 
 	for {
 		if processedCourses == 0 {
-			courses, err := requestCourses("0", "500", client)
+			courses, err := requestCourses(term, "0", "500", client)
 
 			if err != nil {
 				fmt.Println(err)
@@ -170,7 +232,7 @@ func main() {
 			data.Count = courses.Count
 
 		} else {
-			courses, err := requestCourses(strconv.Itoa(processedCourses), "500", client)
+			courses, err := requestCourses(term, strconv.Itoa(processedCourses), "500", client)
 
 			if err != nil {
 				fmt.Println("retrying in 7 seconds")
@@ -182,13 +244,20 @@ func main() {
 
 		processedCourses += 500
 
-		fmt.Println("Processed:", processedCourses)
-
 		if processedCourses >= data.Count {
-			fmt.Println("Finished!")
+			fmt.Println("Finished processing:", data.Count, "courses")
 			break
 		}
 	}
+
+	getCourseDescriptionUrls(term, data)
+
+	for i := range data.Courses {
+		wg.Add(1)
+		go requestCourseDescription(i, data, client, &wg)
+	}
+
+	wg.Wait()
 
 	output, err := json.MarshalIndent(data, "", "\t")
 
