@@ -74,6 +74,13 @@ type attribute struct {
 	Ref       string `json:"courseReferenceNumber"`
 }
 
+func timer(name string) func() {
+	start := time.Now()
+	return func() {
+		fmt.Printf("%s took %v\n", name, time.Since(start))
+	}
+}
+
 func setTerm(semester string, year string) string {
 	var term strings.Builder
 
@@ -126,6 +133,8 @@ func requestCourses(offset string, max string, client http.Client) (*termData, e
 }
 
 func main() {
+	defer timer("main")()
+
 	jar, _ := cookiejar.New(nil)
 
 	client := http.Client{
@@ -134,10 +143,7 @@ func main() {
 
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/registration")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
-	// client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search")
-	// client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search")
-	// client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/classSearch/getTerms?searchTerm=&offset=1&max=10&_=1717271345154")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/search?mode=search&term=202404&studyPath=&studyPathText=&startDatepicker=&endDatepicker=&uniqueSessionId=l47z91717271338036")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/classSearch/classSearch")

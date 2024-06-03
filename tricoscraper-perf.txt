@@ -1,0 +1,12 @@
+WITHOUT CONCURRENCY
+-------------------
+Hydrated client
+Requesting courses
+Processed: 500
+Processed: 1000
+Finished!
+main took 14.742539583s
+
+
+WITH CONCURRENCY
+-------------------
