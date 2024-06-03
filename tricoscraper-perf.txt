@@ -8,5 +8,15 @@ Finished!
 main took 14.742539583s
 
 
-WITH CONCURRENCY
+WITH CONCURRENCY (and fetching 854 course descriptions over http)
 -------------------
+Enter your semester (i.e. fall): fall
+Enter your year (i.e. 2024): 2024
+Hydrated client
+Requesting courses
+Finished processing: 854 courses
+main took 14.590508041s
+
+Improvements can be made if we add concurrency to fetching the course data itself
+but it's only a 5 ish second difference in performance and more code overhead so 
+this is fine for now.
