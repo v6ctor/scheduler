@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,12 +18,60 @@ type termData struct {
 }
 
 type course struct {
-	ID         int    `json:"id"`
-	CourseRef  string `json:"courseReferenceNumber"`
-	CourseNum  string `json:"courseNumber"`
-	Subject    string `json:"subject"`
-	CourseType string `json:"scheduleTypeDescription"`
-	Title      string `json:"courseTitle"`
+	ID              int               `json:"id"`
+	Ref             string            `json:"courseReferenceNumber"`
+	Number          string            `json:"courseNumber"`
+	Subject         string            `json:"subject"`
+	Type            string            `json:"scheduleTypeDescription"`
+	Title           string            `json:"courseTitle"`
+	Credits         float32           `json:"creditHours"`
+	MaxEnrollment   int               `json:"maximumEnrollment"`
+	Enrolled        int               `json:"enrollment"`
+	Availability    int               `json:"seatsAvailable"`
+	Faculty         []faculty         `json:"faculty"`
+	MeetingsFaculty []meetingsFaculty `json:"meetingsFaculty"`
+	Attributes      []attribute       `json:"sectionAttributes"`
+}
+
+type faculty struct {
+	ID    string `json:"bannerId"`
+	Ref   string `json:"courseReferenceNumber"`
+	Name  string `json:"displayName"`
+	Email string `json:"emailAddress"`
+}
+
+type meetingsFaculty struct {
+	Section     string `json:"category"`
+	Ref         string `json:"courseReferenceNumber"`
+	MeetingTime meetingTime
+}
+
+type meetingTime struct {
+	Begin         string  `json:"beginTime"`
+	BuildingShort string  `json:"building"`
+	BuildingLong  string  `json:"buildingDescription"`
+	Room          string  `json:"room"`
+	Section       string  `json:"category"`
+	Ref           string  `json:"courseReferenceNumber"`
+	EndDate       string  `json:"endDate"`
+	EndTime       string  `json:"endTime"`
+	StartDate     string  `json:"startDate"`
+	Hours         float32 `json:"hoursWeek"`
+	TypeShort     string  `json:"meetingType"`
+	TypeLong      string  `json:"meetingTypeDescription"`
+	Monday        bool    `json:"monday"`
+	Tuesday       bool    `json:"tuesday"`
+	Wednesday     bool    `json:"wednesday"`
+	Thursday      bool    `json:"thursday"`
+	Friday        bool    `json:"friday"`
+	Saturday      bool    `json:"saturday"`
+	Sunday        bool    `json:"sunday"`
+}
+
+type attribute struct {
+	CodeShort string `json:"code"`
+	CodeLong  string `json:"description"`
+	Ref       string `json:"courseReferenceNumber"`
 }
 
 func setTerm(semester string, year string) string {
@@ -84,32 +133,29 @@ func main() {
 	}
 
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/registration")
-	time.Sleep(2000 * time.Millisecond)
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
-	time.Sleep(2000 * time.Millisecond)
+	// client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search")
+	// client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search")
-	time.Sleep(2000 * time.Millisecond)
-	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
-	time.Sleep(2000 * time.Millisecond)
-	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search")
-	time.Sleep(2000 * time.Millisecond)
-	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
-	time.Sleep(2000 * time.Millisecond)
+	// client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/selfServiceMenu/data")
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/classSearch/getTerms?searchTerm=&offset=1&max=10&_=1717271345154")
-	time.Sleep(2000 * time.Millisecond)
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/term/search?mode=search&term=202404&studyPath=&studyPathText=&startDatepicker=&endDatepicker=&uniqueSessionId=l47z91717271338036")
-	time.Sleep(2000 * time.Millisecond)
 	client.Get("https://studentregistration.swarthmore.edu/StudentRegistrationSsb/ssb/classSearch/classSearch")
+
+	fmt.Println("Hydrated client")
 
 	processedCourses := 0
 
 	var data termData
+
+	fmt.Println("Requesting courses")
 
 	for {
 		if processedCourses == 0 {
 			courses, err := requestCourses("0", "500", client)
 
 			if err != nil {
+				fmt.Println(err)
 				fmt.Println("retrying in 7 seconds")
 				time.Sleep(7000 * time.Millisecond)
 			}
@@ -134,9 +180,20 @@ func main() {
 
 		if processedCourses >= data.Count {
 			fmt.Println("Finished!")
-			fmt.Println(data)
 			break
 		}
+	}
+
+	output, err := json.MarshalIndent(data, "", "\t")
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = os.WriteFile("courses.json", output, 0644)
+
+	if err != nil {
+		fmt.Println(err)
 	}
 
 }
